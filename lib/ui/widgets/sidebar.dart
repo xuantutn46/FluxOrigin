@@ -77,17 +77,24 @@ class Sidebar extends StatelessWidget {
                     isDark: isDark,
                   ),
                   SidebarItem(
-                    icon: FontAwesomeIcons.clockRotateLeft,
-                    label: AppStrings.get(lang, 'sidebar_history'),
+                    icon: FontAwesomeIcons.folderTree,
+                    label: AppStrings.get(lang, 'sidebar_batch'),
                     isActive: selectedIndex == 1,
                     onTap: () => onItemTap(1),
                     isDark: isDark,
                   ),
                   SidebarItem(
-                    icon: FontAwesomeIcons.bookOpenReader,
-                    label: AppStrings.get(lang, 'sidebar_dictionary'),
+                    icon: FontAwesomeIcons.clockRotateLeft,
+                    label: AppStrings.get(lang, 'sidebar_history'),
                     isActive: selectedIndex == 2,
                     onTap: () => onItemTap(2),
+                    isDark: isDark,
+                  ),
+                  SidebarItem(
+                    icon: FontAwesomeIcons.bookOpenReader,
+                    label: AppStrings.get(lang, 'sidebar_dictionary'),
+                    isActive: selectedIndex == 3,
+                    onTap: () => onItemTap(3),
                     isDark: isDark,
                   ),
                 ],
@@ -115,8 +122,8 @@ class Sidebar extends StatelessWidget {
                   SidebarItem(
                     icon: FontAwesomeIcons.gear,
                     label: AppStrings.get(lang, 'sidebar_settings'),
-                    isActive: selectedIndex == 3,
-                    onTap: () => onItemTap(3),
+                    isActive: selectedIndex == 4,
+                    onTap: () => onItemTap(4),
                     isDark: isDark,
                     showBadge:
                         !ollamaConnected, // Stealth Mode: Show red dot if disconnected
@@ -124,8 +131,8 @@ class Sidebar extends StatelessWidget {
                   SidebarItem(
                     icon: FontAwesomeIcons.bug,
                     label: 'Dev Logs',
-                    isActive: selectedIndex == 4,
-                    onTap: () => onItemTap(4),
+                    isActive: selectedIndex == 5,
+                    onTap: () => onItemTap(5),
                     isDark: isDark,
                   ),
                 ],

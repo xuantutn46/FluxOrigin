@@ -1,7 +1,7 @@
 name: flux_origin
 description: A translation desktop application for Windows
 publish_to: 'none'
-version: 2.0.2+1
+version: 2.1.0+0
 
 environment:
   sdk: '>=3.0.0 <4.0.0'

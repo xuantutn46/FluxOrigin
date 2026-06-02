@@ -11,6 +11,8 @@ import '../utils/text_processor.dart';
 import '../utils/file_parser.dart';
 import '../utils/app_strings.dart';
 
+// @visibleForTesting re-exported via package:flutter/foundation.dart above
+
 class TranslationController {
   final AIService _aiService = AIService();
   final WebSearchService _webSearchService = WebSearchService();
@@ -80,6 +82,12 @@ class TranslationController {
   /// [onChunkUpdate] callback returns current chunk index, total chunks, source chunk, and translated chunk.
   /// [allowInternet] controls whether web search (RAG) is used for glossary enrichment.
   /// [resume] if true and progress exists, resume from saved state; if false, start fresh.
+  /// [userGlossaryPath] optional path to a user-provided CSV glossary. When provided
+  /// and the file exists, the user's entries are used as the primary glossary and
+  /// AI generation is SKIPPED (this fixes issue #6 where the system ignored the
+  /// user-uploaded CSV and always re-generated its own). When null/empty, the
+  /// legacy behavior (AI generation + smart merge with ${fileName}_glossary.csv)
+  /// is preserved for backward compatibility.
   /// Returns the translated content as a String, or null if paused.
   Future<String?> processFile({
     required String filePath,
@@ -94,6 +102,7 @@ class TranslationController {
     required bool allowInternet,
     bool resume = false,
     String appLanguage = 'vi',
+    String? userGlossaryPath,
   }) async {
     // Reset pause state at start
     _isPaused = false;
@@ -175,28 +184,52 @@ Resume: $resume
             _aiService.getSystemPrompt(genreKey, sourceLanguage, targetLanguage);
         _logger.debug('Translation', 'System prompt set', details: systemPrompt);
 
-        onUpdate(AppStrings.get(appLanguage, 'status_creating_glossary'), 0.3);
-        final String glossaryCsv = await _aiService.generateGlossary(
-            sample, modelName, sourceLanguage, genreKey);
-        _logger.info('Translation',
-            'Glossary generated: ${glossaryCsv.split('\n').length} terms');
-
         // Smart Merge: Merge AI glossary with existing user CSV
         final glossaryFile =
             File(path.join(dictionaryDir, "${fileName}_glossary.csv"));
 
-        try {
-          final String mergedCsv = await _smartMergeGlossary(
-            aiGeneratedCsv: glossaryCsv,
-            existingFile: glossaryFile,
-          );
+        // === FIX ISSUE #6 ===
+        // If the user supplied an explicit glossary file, use it AS-IS and
+        // SKIP AI generation entirely. This both fixes the bug and saves an
+        // expensive API call. Fall back to AI generation only if the user
+        // did not provide a path (or the file is missing/empty).
+        final bool hasUserGlossary = await applyUserGlossary(
+          userGlossaryPath: userGlossaryPath,
+          glossaryFile: glossaryFile,
+        );
 
-          // Save merged glossary as CSV
-          await glossaryFile.writeAsString(mergedCsv);
-          _logger.debug('Translation', 'Glossary saved to: ${glossaryFile.path}');
-        } catch (e) {
-          _logger.warning('Translation', 'Error saving glossary: $e');
-          // Non-critical error, continue
+        if (!hasUserGlossary) {
+          // No user glossary → use the legacy AI-generation + smart-merge
+          // flow. This is the original (preserved) behavior for backward
+          // compatibility with callers that don't pass `userGlossaryPath`.
+          onUpdate(
+              AppStrings.get(appLanguage, 'status_creating_glossary'), 0.3);
+          final String glossaryCsv = await _aiService.generateGlossary(
+              sample, modelName, sourceLanguage, genreKey);
+          _logger.info('Translation',
+              'Glossary generated: ${glossaryCsv.split('\n').length} terms');
+
+          try {
+            final String mergedCsv = await _smartMergeGlossary(
+              aiGeneratedCsv: glossaryCsv,
+              existingFile: glossaryFile,
+            );
+
+            // Save merged glossary as CSV
+            await glossaryFile.writeAsString(mergedCsv);
+            _logger.debug('Translation',
+                'Glossary saved to: ${glossaryFile.path}');
+          } catch (e) {
+            _logger.warning('Translation', 'Error saving glossary: $e');
+            // Non-critical error, continue
+          }
+        } else {
+          // User glossary is in place — surface a clear status so the user
+          // can see that their file is being used (instead of feeling that
+          // the system silently overrode it like before the fix).
+          onUpdate(AppStrings.get(
+              appLanguage, 'status_using_user_glossary'),
+              0.32);
         }
 
         // Enrich Glossary: Lookup definitions (only if Internet is allowed)
@@ -236,7 +269,7 @@ Resume: $resume
         _logger.error('Translation', 'Initialization failed during glossary generation', details: e.toString());
         
         // CRITICAL: Update UI with error status so it doesn't stay stuck at "Creating glossary"
-        onUpdate(AppStrings.get(appLanguage, 'status_error') + ': $e', 0.3);
+        onUpdate('${AppStrings.get(appLanguage, 'status_error')}: $e', 0.3);
         
         // Rethrow to stop execution and let caller handle the error
         rethrow;
@@ -476,6 +509,62 @@ Resume: $resume
       }).toList();
 
       return const ListToCsvConverter().convert(csvData, eol: '\n');
+    }
+  }
+
+  /// Applies a user-provided glossary file to the active glossary slot.
+  ///
+  /// If [userGlossaryPath] is non-empty, the file at that path is read,
+  /// validated (non-empty, has at least one valid line), and written to
+  /// [glossaryFile] (the standard ${fileName}_glossary.csv location). This
+  /// causes the user's CSV to win over any AI-generated content, fixing
+  /// issue #6 ("Lỗi từ điển").
+  ///
+  /// Returns true if a user glossary was successfully applied; false if no
+  /// path was provided, the file is missing, or the file is empty/invalid
+  /// (in which case the caller should fall back to the AI generation flow).
+  @visibleForTesting
+  Future<bool> applyUserGlossary({
+    required String? userGlossaryPath,
+    required File glossaryFile,
+  }) async {
+    if (userGlossaryPath == null || userGlossaryPath.trim().isEmpty) {
+      return false;
+    }
+
+    final userFile = File(userGlossaryPath);
+    if (!await userFile.exists()) {
+      _logger.warning('Translation',
+          'User glossary file not found, falling back to AI generation: $userGlossaryPath');
+      return false;
+    }
+
+    try {
+      final userContent = await userFile.readAsString();
+      if (userContent.trim().isEmpty) {
+        _logger.warning('Translation',
+            'User glossary file is empty, falling back to AI generation: $userGlossaryPath');
+        return false;
+      }
+
+      // Count meaningful non-empty lines for logging
+      final lineCount = userContent
+          .split('\n')
+          .where((l) => l.trim().isNotEmpty)
+          .length;
+
+      // Copy the user's file to the standard glossary slot. The file is
+      // copied verbatim (no AI merge) so user entries are 100% preserved —
+      // this is the core fix for issue #6.
+      await glossaryFile.writeAsString(userContent, flush: true);
+      _logger.info('Translation',
+          'Applied user glossary ($lineCount lines) from: $userGlossaryPath → ${glossaryFile.path}');
+      return true;
+    } catch (e) {
+      _logger.error('Translation',
+          'Failed to read user glossary: $userGlossaryPath',
+          details: e.toString());
+      return false;
     }
   }
 

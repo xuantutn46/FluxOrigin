@@ -213,6 +213,10 @@ class _TranslateScreenState extends State<TranslateScreen> {
         allowInternet: allowInternet,
         resume: resume,
         appLanguage: lang,
+        // FIX ISSUE #6: Pass the user-selected dictionary path so the
+        // controller can use it instead of regenerating an AI glossary
+        // that overrides the user's entries.
+        userGlossaryPath: _useCustomDict ? _selectedDictionaryPath : null,
         onUpdate: (status, progress) {
           if (mounted) {
             setState(() {

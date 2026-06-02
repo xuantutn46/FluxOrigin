@@ -7,6 +7,7 @@ import 'widgets/title_bar.dart';
 import 'widgets/sidebar.dart';
 import 'widgets/ollama_health_check.dart';
 import 'screens/translate_screen.dart';
+import 'screens/batch_translate_screen.dart';
 import 'screens/history_screen.dart';
 import 'screens/dictionary_screen.dart';
 import 'screens/settings_screen.dart';
@@ -82,6 +83,8 @@ class _MyAppState extends State<MyApp> {
                                       index: _selectedIndex,
                                       children: [
                                         TranslateScreen(
+                                            isDark: themeNotifier.isDark),
+                                        BatchTranslateScreen(
                                             isDark: themeNotifier.isDark),
                                         HistoryScreen(
                                             isDark: themeNotifier.isDark),
